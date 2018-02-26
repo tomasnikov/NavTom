@@ -1,0 +1,3 @@
+rootProject.name = 'NavTom'
+
+include ':app'
