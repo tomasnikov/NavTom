@@ -1,11 +1,27 @@
 import React, { Component } from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import { Platform, StyleSheet, Text, View, Button } from "react-native";
+import MapView, { Polyline } from "react-native-maps";
 
-const instructions = Platform.select({
-  ios: "Press Cmd+R to reload,\n" + "Cmd+D or shake for dev menu",
-  android: "Double tap R on your keyboard to reload,\n" + "Shake or press menu button for dev menu",
-});
+const earthRadiusKm = 6371;
+const distanceFilter = 1;
+function degreesToRadians(degrees) {
+  return degrees * Math.PI / 180;
+}
+
+function getPositionDiff(positionA, positionB) {
+  const dLat = degreesToRadians(positionA.latitude - positionB.latitude);
+  const dLon = degreesToRadians(positionA.longitude - positionB.longitude);
+
+  const latA = degreesToRadians(positionA.latitude);
+  const latB = degreesToRadians(positionB.latitude);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(latA) * Math.cos(latB);
+
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusKm * c * 1000;
+}
 
 type Props = {};
 export default class App extends Component<Props> {
@@ -19,41 +35,52 @@ export default class App extends Component<Props> {
       error: null,
       markers: [],
     };
+    this.addRandomMarker = this.addRandomMarker.bind(this);
   }
 
-  updatePosition() {
+  updatePosition(position) {
     const { latitude, longitude, markers } = this.state;
-
+    console.log("position", position);
+    if (markers.length > 0) {
+      const positionDiff = getPositionDiff(position, markers[markers.length - 1]);
+      if (positionDiff < distanceFilter) {
+        return;
+      }
+    }
     this.setState({
-      lastLatitude: latitude || position.coords.latitude,
-      lastLongitude: longitude || position.coords.longitude,
-      latitude: position.coords.latitude,
-      longitude: position.coords.longitude,
+      lastLatitude: latitude || position.latitude,
+      lastLongitude: longitude || position.longitude,
+      latitude: position.latitude,
+      longitude: position.longitude,
       error: null,
+      markers: [...markers, position],
     });
+  }
+
+  addRandomMarker() {
+    const { latitude, longitude } = this.state;
+    const random = () => (Math.random() * -1 + 0.5) * 0.001;
+    const newPosition = {
+      latitude: latitude + random(),
+      longitude: longitude + random(),
+    };
+    this.updatePosition(newPosition);
   }
 
   componentDidMount() {
     const { latitude, longitude, markers } = this.state;
-    const options = { enableHighAccuracy: true, timeout: 30000, maximumAge: 1000 };
+    let options = { enableHighAccuracy: true }; //, timeout: 30000, maximumAge: 1000 };
+    options = {};
 
     navigator.geolocation.getCurrentPosition(
-      position => {
-        this.updatePosition();
-      },
+      position => this.updatePosition(position.coords),
       error => this.setState({ error: error.message }),
       options
     );
     this.watchId = navigator.geolocation.watchPosition(
-      position => {
-        console.log("updating position");
-        this.updatePosition();
-      },
+      position => this.updatePosition(position.coords),
       error => this.setState({ error: error.message }),
-      {
-        ...options,
-        distanceFilter: 1,
-      }
+      { ...options, distanceFilter }
     );
   }
 
@@ -63,27 +90,20 @@ export default class App extends Component<Props> {
 
   renderMap() {
     let { latitude, longitude, markers } = this.state;
-    latitude = latitude || 37.78825;
-    longitude = longitude || -122.4324;
+    latitude = latitude || 64.9;
+    longitude = longitude || -20.8;
     console.log(this.state);
     return (
       <MapView
         style={styles.map}
-        initialRegion={{
+        region={{
           latitude: latitude,
           longitude: longitude,
-          latitudeDelta: 0.0,
-          longitudeDelta: 0.04,
+          latitudeDelta: 0.005,
+          longitudeDelta: 0.001,
         }}
       >
-        {markers.map(marker => (
-          <Marker
-            coordinate={{
-              latitude: marker.latitude,
-              longitude: marker.longitude,
-            }}
-          />
-        ))}
+        <Polyline coordinates={markers} strokeWidth={2} />
       </MapView>
     );
   }
@@ -120,6 +140,7 @@ export default class App extends Component<Props> {
       <View style={styles.container}>
         {this.renderMap()}
         {this.renderText()}
+        <Button onPress={this.addRandomMarker} title="Add random marker" />
       </View>
     );
   }
@@ -141,10 +162,5 @@ const styles = StyleSheet.create({
     fontSize: 20,
     textAlign: "center",
     margin: 10,
-  },
-  instructions: {
-    textAlign: "center",
-    color: "#333333",
-    marginBottom: 5,
   },
 });
